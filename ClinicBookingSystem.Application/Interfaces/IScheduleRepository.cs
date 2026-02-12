@@ -9,9 +9,9 @@ namespace ClinicBookingSystem.Application.Interfaces
 {
     public interface IScheduleRepository
     {
-        public Task<Schedule?> GetByDoctorIdAndDateAsync(Guid doctorId, DateOnly date);
-        public Task<Schedule?> GetByDoctorIdAsync(Guid doctorId);
-         public Task AddAsync(Schedule schedule);
-         public Task UpdateAsync(Schedule schedule);
+        public Task<IReadOnlyList<Schedule?>> GetByDoctorIdAndDateAsync(Guid doctorId, DateOnly date);
+        public Task<IReadOnlyList<Schedule?>> GetByDoctorIdAsync(Guid doctorId);
+        public Task AddAsync(Schedule schedule);
+        public Task UpdateAsync(Schedule schedule);
     }
 }

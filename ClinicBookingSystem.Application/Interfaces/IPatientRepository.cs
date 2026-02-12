@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace ClinicBookingSystem.Application.Interfaces
 {
-    public interface IDoctorRepository
+    public interface IPatientRepository
     {
         public Task<Doctor?> GetByIdAsync(Guid doctorId);
         public Task<IReadOnlyList<Doctor>> GetAllAsync();
