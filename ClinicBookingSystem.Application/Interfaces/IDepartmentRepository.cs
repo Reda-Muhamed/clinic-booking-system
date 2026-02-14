@@ -14,6 +14,10 @@ namespace ClinicBookingSystem.Application.Interfaces
        public Task AddAsync(Department department);
        public Task DeleteAsync(Department department);
        public Task<bool> ExistsAsync(Guid id);
+        public Task UpdateAsync(Department department);
+       public Task<bool> ExistsByNameAsync(string name);
+
+
 
     }
 }

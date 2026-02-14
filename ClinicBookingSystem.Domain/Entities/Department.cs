@@ -17,5 +17,12 @@ namespace ClinicBookingSystem.Domain.Entities
             Id = Guid.NewGuid();
             Name = name;
         }
+        public void UpdateName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Department name cannot be empty.");
+            Name = name;
+        }
+
     }
 }
