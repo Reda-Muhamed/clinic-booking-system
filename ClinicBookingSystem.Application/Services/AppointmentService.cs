@@ -7,346 +7,255 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
-namespace ClinicBookingSystem.Application.Services
+public class AppointmentService : IAppointmentCommandService, IAppointmentQueryService
 {
-    public class AppointmentService : IAppointmentCommandService, IAppointmentQueryService
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAppointmentRepository _appointmentRepository;
+    private readonly IDoctorRepository _doctorRepository;
+    private readonly IPatientRepository _patientRepository;
+    private readonly IScheduleRepository _scheduleRepository;
+
+    public AppointmentService(
+        IUnitOfWork unitOfWork,
+        IAppointmentRepository appointmentRepository,
+        IDoctorRepository doctorRepository,
+        IPatientRepository patientRepository,
+        IScheduleRepository scheduleRepository)
     {
-        private readonly IUnitOfWork unitOfWork;
-        private readonly IAppointmentRepository appointmentRepository;
-        private readonly IDoctorRepository doctorRepository;
-        private readonly IPatientRepository patientRepository;
-        private readonly IScheduleRepository scheduleRepository;
+        _unitOfWork = unitOfWork;
+        _appointmentRepository = appointmentRepository;
+        _doctorRepository = doctorRepository;
+        _patientRepository = patientRepository;
+        _scheduleRepository = scheduleRepository;
+    }
 
-        public AppointmentService(IUnitOfWork unitOfWork,IAppointmentRepository appointmentRepository,IDoctorRepository doctorRepository , IPatientRepository patientRepository,IScheduleRepository scheduleRepository)
+    public async Task<Result> RequestAppointmentAsync(Guid patientId, Guid doctorId, DateTimeOffset startTime)
+    {
+        if (startTime <= DateTimeOffset.UtcNow)
+            return Result.Failure("Appointment time must be in the future.");
+
+       
+        if (!await _doctorRepository.ExistsAsync(doctorId))
+            return Result.Failure("Doctor not found.");
+
+        if (!await _patientRepository.ExistsAsync(patientId))
+            return Result.Failure("Patient not found.");
+
+        
+        var dayOfWeek = startTime.DayOfWeek;
+        var daySchedules = await _scheduleRepository.GetSchedulesByDoctorAndDayAsync(doctorId, dayOfWeek);
+
+        if (!daySchedules.Any())
+            return Result.Failure("Doctor is not working on this day.");
+
+        var startTimeOfDay = TimeOnly.FromTimeSpan(startTime.TimeOfDay);
+
+        var matchingSchedule = daySchedules.FirstOrDefault(s =>
+            startTimeOfDay >= s.StartTime &&
+            startTimeOfDay.AddMinutes(s.SlotDurationInMinutes) <= s.EndTime);
+
+        if (matchingSchedule is null)
+            return Result.Failure("Selected time is outside working hours.");
+
+        // 4. Validate Slot Alignment (Modulus Check)
+        var timeFromStart = startTimeOfDay - matchingSchedule.StartTime;
+        if (timeFromStart.TotalMinutes % matchingSchedule.SlotDurationInMinutes != 0)
+            return Result.Failure($"Appointments must align with the {matchingSchedule.SlotDurationInMinutes}-minute slots.");
+
+        var endTime = startTime.AddMinutes(matchingSchedule.SlotDurationInMinutes);
+        var appointmentDate = DateOnly.FromDateTime(startTime.Date);
+
+        var existingAppointments = await _appointmentRepository.GetByDoctorAndDateAsync(doctorId, appointmentDate);
+
+        bool isOverlapping = existingAppointments.Any(existing =>
+            existing.Status != AppointmentStatus.Cancelled &&
+            existing.Status != AppointmentStatus.Rejected &&
+            startTime < existing.EndTime &&
+            endTime > existing.StartTime); 
+
+        if (isOverlapping)
+            return Result.Failure("This time slot is already reserved.");
+
+        var appointment = new Appointment(patientId, doctorId, startTime, endTime);
+
+        try
         {
-            this.unitOfWork = unitOfWork;
-            this.appointmentRepository = appointmentRepository;
-            this.doctorRepository = doctorRepository;
-            this.patientRepository = patientRepository;
-            this.scheduleRepository = scheduleRepository;
+            await _appointmentRepository.AddAsync(appointment);
+            await _unitOfWork.SaveChangesAsync();
+        }
+        catch (DbException)
+        {
+            return Result.Failure("This time slot was just reserved by another patient. Please try again.");
         }
 
-        public async Task<Result> RequestAppointmentAsync(Guid patientId, Guid doctorId, DateTimeOffset startTime)
+        return Result.Success();
+    }
+
+    public async Task<Result<IReadOnlyList<AvailableTimeSlotDto>>> GetAvailableTimeSlotsAsync(Guid doctorId, DateOnly date)
+    {
+        if (!await _doctorRepository.ExistsAsync(doctorId))
+            return Result<IReadOnlyList<AvailableTimeSlotDto>>.Failure("Doctor not found.");
+
+        var daySchedules = await _scheduleRepository.GetSchedulesByDoctorAndDayAsync(doctorId, date.DayOfWeek);
+
+        if (!daySchedules.Any())
+            return Result<IReadOnlyList<AvailableTimeSlotDto>>.Success(new List<AvailableTimeSlotDto>());
+
+        var appointments = await _appointmentRepository.GetByDoctorAndDateAsync(doctorId, date);
+
+        // list of the busy intervales
+        var busyIntervals = appointments
+            .Where(a => a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.Rejected)
+            .Select(a => new { Start = a.StartTime, End = a.EndTime })
+            .ToList();
+
+        var availableSlots = new List<AvailableTimeSlotDto>();
+
+        foreach (var schedule in daySchedules)
         {
-            if (startTime <= DateTimeOffset.UtcNow)
-                return Result.Failure("Appointment time must be in the future.");
+            var currentSlotStart = schedule.StartTime;
 
-            var date = DateOnly.FromDateTime(startTime.UtcDateTime);
-
-            var doctor = await doctorRepository.GetByIdAsync(doctorId);
-            if (doctor is null)
-                return Result.Failure("Doctor not found.");
-
-            var patient = await patientRepository.GetByIdAsync(patientId);
-            if (patient is null)
-                return Result.Failure("Patient not found.");
-
-            var schedules = await scheduleRepository.GetByDoctorIdAsync(doctorId);
-
-            var schedule = schedules
-                .FirstOrDefault(s => s?.DayOfWeek == startTime.DayOfWeek);
-
-            if (schedule is null)
-                return Result.Failure("Doctor is not working on this day.");
-
-
-            var startTimeOfDay = TimeOnly.FromDateTime(startTime.UtcDateTime);
-            var endTimeOfDay = startTimeOfDay.AddMinutes(schedule.SlotDurationInMinutes);
-
-            if (startTimeOfDay < schedule.StartTime ||
-                endTimeOfDay > schedule.EndTime)
-                return Result.Failure("Selected time is outside working hours.");
-
-
-            var minutesFromStart = (startTimeOfDay.ToTimeSpan() - schedule.StartTime.ToTimeSpan()).TotalMinutes;
-
-            if (minutesFromStart % schedule.SlotDurationInMinutes != 0)
-                return Result.Failure("Invalid time slot selection.");
-
-            var endTime = startTime.AddMinutes(schedule.SlotDurationInMinutes);
-
-            var existingAppointments =
-            await appointmentRepository.GetByDoctorAndDateAsync(doctorId, date);
-            // check overlaps ... if appointment exist 9 -> 10, and i need to reserve 9:10 -> 9:50
-            foreach (var existing in existingAppointments)
+            while (currentSlotStart.AddMinutes(schedule.SlotDurationInMinutes) <= schedule.EndTime)
             {
-                if (existing.Status is AppointmentStatus.Cancelled ||
-                    existing.Status is AppointmentStatus.Rejected)
-                    continue;
+                
+                var slotStartDto = new DateTimeOffset(date.ToDateTime(currentSlotStart), TimeSpan.Zero);
+                var slotEndDto = slotStartDto.AddMinutes(schedule.SlotDurationInMinutes);
 
-                var overlap =
-                    startTime < existing.EndTime &&
-                    endTime > existing.StartTime;
+                // Check Overlap against Busy Intervals
+                bool isTaken = busyIntervals.Any(busy =>
+                    slotStartDto < busy.End && slotEndDto > busy.Start);
 
-                if (overlap)
-                    return Result.Failure("This time slot is already reserved.");
-            }
-            var appointment = new Appointment(patientId, doctorId, startTime, endTime);
-
-            try
-            {
-                await appointmentRepository.AddAsymc(appointment);
-                await unitOfWork.SaveChangesAsync(); 
-            }
-            catch (DbException )
-            {
-                // Concurrency safety 
-                return Result.Failure("This time slot was just reserved. Please try another.");
-            }
-
-            return Result.Success();
-
-        }
-
-
-
-        public async Task<Result> ApproveAppointmentAsync(Guid appointmentId , Guid doctorId)
-        {
-            var appointment = await appointmentRepository.GetByIdAsync(appointmentId);
-            
-            if (appointment is null)
-            {
-                return Result.Failure("The appointment does not exist");
-            }
-            if (appointment.DoctorId != doctorId)
-                return Result.Failure("You are not allowed to approve this appointment.");
-
-            //  the status of it was checked internally in the Approve()
-           
-            try
-            {
-                appointment.Approve();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Result.Failure(ex.Message);
-            }
-            await unitOfWork.SaveChangesAsync();
-            return Result.Success();
-        }
-
-
-        public async Task<Result> CancelAppointmentAsync(Guid appointmentId,Guid actorId, UserRole role)
-        {
-            var appointment = await appointmentRepository.GetByIdAsync(appointmentId);
-
-            if (appointment is null)
-                return Result.Failure("The appointment does not exist.");
-
-            var isAuthorized = role switch
-            {
-                UserRole.Patient => appointment.PatientId == actorId,
-                UserRole.Doctor => appointment.DoctorId == actorId,
-                UserRole.Admin => true,
-                _ => false
-            };
-
-            if (!isAuthorized)
-                return Result.Failure("You are not allowed to cancel this appointment.");
-
-            try
-            {
-                appointment.Cancel();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Result.Failure(ex.Message);
-            }
-
-            await unitOfWork.SaveChangesAsync();
-
-            return Result.Success();
-        }
-
-
-        public async Task<Result> CompleteAppointmentAsync ( Guid appointmentId,Guid actorId,UserRole role)
-        {
-            var appointment = await appointmentRepository.GetByIdAsync(appointmentId);
-
-            if (appointment is null)
-                return Result.Failure("The appointment does not exist.");
-
-            var isAuthorized = role switch
-            {
-                UserRole.Doctor => appointment.DoctorId == actorId,
-                UserRole.Admin => true,
-                _ => false
-            };
-
-            if (!isAuthorized)
-                return Result.Failure("You are not allowed to complete this appointment.");
-
-            try
-            {
-                appointment.Complete();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Result.Failure(ex.Message);
-            }
-
-            await unitOfWork.SaveChangesAsync();
-
-            return Result.Success();
-        }
-
-        public async Task<Result> RejectAppointmentAsync(Guid appointmentId,Guid actorId,UserRole role)
-        {
-            var appointment = await appointmentRepository.GetByIdAsync(appointmentId);
-
-            if (appointment is null)
-                return Result.Failure("The appointment does not exist.");
-
-            var isAuthorized = role switch
-            {
-                UserRole.Doctor => appointment.DoctorId == actorId,
-                UserRole.Admin => true,
-                _ => false
-            };
-
-            if (!isAuthorized)
-                return Result.Failure("You are not allowed to reject this appointment.");
-
-            try
-            {
-                appointment.Reject();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Result.Failure(ex.Message);
-            }
-
-            await unitOfWork.SaveChangesAsync();
-
-            return Result.Success();
-        }
-
-
-        public async Task<Result<AppointmentDto>> GetAppointmentByIdAsync(Guid appointmentId)
-        {
-            var appointment = await appointmentRepository.GetByIdWithDetailsAsync(appointmentId);
-
-            if (appointment is null)
-                return Result<AppointmentDto>.Failure("The appointment does not exist.");
-            // get the doctor and patient name 
-            
-            var dto = MapToDto(appointment);
-
-            return Result<AppointmentDto>.Success(dto);
-        }
-
-
-
-
-        public async Task<Result<IReadOnlyList<AppointmentDto>>>GetAppointmentsByDoctorIdAsync(Guid doctorId)
-        {
-            // validate the doctor 
-            var doctor = await doctorRepository.GetByIdAsync(doctorId);
-            if (doctor is null)
-                return Result<IReadOnlyList<AppointmentDto>>.Failure("The doctor was not found");
-            var appointments = await appointmentRepository.GetByDoctorIdAsync(doctorId);
-
-            var result = appointments
-                .Select(a => MapToDto(a))
-                .ToList()
-                .AsReadOnly();
-
-            return Result<IReadOnlyList<AppointmentDto>>.Success(result);
-        }
-
-
-        public async Task<Result<IReadOnlyList<AppointmentDto>>> GetAppointmentsByPatientIdAsync(Guid patientId)
-        {
-            // validate the patient
-            var patient = await patientRepository.GetByIdAsync(patientId);
-            if (patient is null)
-                return Result<IReadOnlyList<AppointmentDto>>.Failure("The Patient was not found");
-            var appointments = await appointmentRepository.GetByPatientIdAsync(patientId);
-
-            var result = appointments
-                .Select(a => MapToDto(a))
-                .ToList()
-                .AsReadOnly();
-
-            return Result<IReadOnlyList<AppointmentDto>>.Success(result);
-
-        }
-
-        public async Task<Result<IReadOnlyList<AvailableTimeSlotDto>>>GetAvailableTimeSlotsAsync(Guid doctorId, DateOnly date)
-        {
-            var doctor = await doctorRepository.GetByIdAsync(doctorId);
-            if (doctor is null)
-                return Result<IReadOnlyList<AvailableTimeSlotDto>>.Failure("Doctor not found.");
-
-            var dayOfWeek = date.DayOfWeek;
-
-            // Load schedules
-            var schedules = await scheduleRepository.GetByDoctorIdAsync(doctorId);
-
-            var schedule = schedules
-                .FirstOrDefault(s => s.DayOfWeek == dayOfWeek);
-
-            if (schedule is null)
-                return Result<IReadOnlyList<AvailableTimeSlotDto>>
-                    .Success(new List<AvailableTimeSlotDto>());
-
-            var slots = new List<AvailableTimeSlotDto>();
-
-            var current = schedule.StartTime;
-
-            while (current.AddMinutes(schedule.SlotDurationInMinutes) <= schedule.EndTime)
-            {
-                var start = new DateTimeOffset(
-                    date.ToDateTime(current),
-                    TimeSpan.Zero);
-                var end = start.AddMinutes(schedule.SlotDurationInMinutes);
-
-                slots.Add(new AvailableTimeSlotDto
+                if (!isTaken)
                 {
-                    StartTime = start,
-                    EndTime = end
-                });
+                    availableSlots.Add(new AvailableTimeSlotDto
+                    {
+                        StartTime = slotStartDto,
+                        EndTime = slotEndDto
+                    });
+                }
 
-                current = current.AddMinutes(schedule.SlotDurationInMinutes);
+                currentSlotStart = currentSlotStart.AddMinutes(schedule.SlotDurationInMinutes);
             }
-
-            //Load existing appointments
-            var appointments = await appointmentRepository
-                .GetByDoctorAndDateAsync(doctorId, date);
-
-            //Remove reserved slots
-            var reserved = appointments
-                .Where(a => a.Status == AppointmentStatus.Requested ||
-                            a.Status == AppointmentStatus.Approved)
-                .Select(a => a.StartTime)
-                .ToHashSet();
-
-            var availableSlots = slots
-                .Where(s => !reserved.Contains(s.StartTime))
-                .ToList();
-
-            return Result<IReadOnlyList<AvailableTimeSlotDto>>
-                .Success(availableSlots);
         }
 
+        return Result<IReadOnlyList<AvailableTimeSlotDto>>.Success(availableSlots);
+    }
 
-        private static AppointmentDto MapToDto(Appointment appointment)
+
+    public async Task<Result> ApproveAppointmentAsync(Guid appointmentId, Guid doctorId)
+    {
+        var appointment = await _appointmentRepository.GetByIdAsync(appointmentId);
+        if (appointment is null) return Result.Failure("Appointment not found.");
+
+        if (appointment.DoctorId != doctorId)
+            return Result.Failure("Unauthorized.");
+
+        try
         {
-            return new AppointmentDto
-            {
-                Id = appointment.Id,
-                PatientId = appointment.PatientId,
-                DoctorId = appointment.DoctorId,
-                StartTime = appointment.StartTime,
-                EndTime = appointment.EndTime,
-                Status = appointment.Status,
-                DoctorName = appointment?.Doctor?.FullName,
-                PatientName = appointment?.Patient?.FullName,
-            };
+            appointment.Approve();
+            await _unitOfWork.SaveChangesAsync();
+            return Result.Success();
         }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+    }
 
+    public async Task<Result> CancelAppointmentAsync(Guid appointmentId, Guid actorId, UserRole role)
+    {
+        var appointment = await _appointmentRepository.GetByIdAsync(appointmentId);
+        if (appointment is null) return Result.Failure("Appointment not found.");
+
+        bool isAuthorized = role switch
+        {
+            UserRole.Patient => appointment.PatientId == actorId,
+            UserRole.Doctor => appointment.DoctorId == actorId,
+            UserRole.Admin => true,
+            _ => false
+        };
+
+        if (!isAuthorized) return Result.Failure("Unauthorized.");
+
+        try
+        {
+            appointment.Cancel();
+            await _unitOfWork.SaveChangesAsync();
+            return Result.Success();
+        }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+    }
+
+    public async Task<Result> CompleteAppointmentAsync(Guid appointmentId, Guid actorId, UserRole role)
+    {
+        var appointment = await _appointmentRepository.GetByIdAsync(appointmentId);
+        if (appointment is null) return Result.Failure("Appointment not found.");
+
+        if (role != UserRole.Admin && appointment.DoctorId != actorId)
+            return Result.Failure("Unauthorized.");
+
+        try
+        {
+            appointment.Complete();
+            await _unitOfWork.SaveChangesAsync();
+            return Result.Success();
+        }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+    }
+
+    public async Task<Result> RejectAppointmentAsync(Guid appointmentId, Guid actorId, UserRole role)
+    {
+        var appointment = await _appointmentRepository.GetByIdAsync(appointmentId);
+        if (appointment is null) return Result.Failure("Appointment not found.");
+
+        if (role != UserRole.Admin && appointment.DoctorId != actorId)
+            return Result.Failure("Unauthorized.");
+
+        try
+        {
+            appointment.Reject();
+            await _unitOfWork.SaveChangesAsync();
+            return Result.Success();
+        }
+        catch (InvalidOperationException ex) { return Result.Failure(ex.Message); }
+    }
+
+    public async Task<Result<AppointmentDto>> GetAppointmentByIdAsync(Guid appointmentId)
+    {
+        var appointment = await _appointmentRepository.GetByIdWithDetailsAsync(appointmentId);
+        if (appointment is null) return Result<AppointmentDto>.Failure("Not found.");
+        return Result<AppointmentDto>.Success(MapToDto(appointment));
+    }
+
+    public async Task<Result<IReadOnlyList<AppointmentDto>>> GetAppointmentsByDoctorIdAsync(Guid doctorId)
+    {
+        if (!await _doctorRepository.ExistsAsync(doctorId))
+            return Result<IReadOnlyList<AppointmentDto>>.Failure("Doctor not found.");
+
+        var appointments = await _appointmentRepository.GetByDoctorIdAsync(doctorId);
+        return Result<IReadOnlyList<AppointmentDto>>.Success(appointments.Select(MapToDto).ToList().AsReadOnly());
+    }
+
+    public async Task<Result<IReadOnlyList<AppointmentDto>>> GetAppointmentsByPatientIdAsync(Guid patientId)
+    {
+        if (!await _patientRepository.ExistsAsync(patientId))
+            return Result<IReadOnlyList<AppointmentDto>>.Failure("Patient not found.");
+
+        var appointments = await _appointmentRepository.GetByPatientIdAsync(patientId);
+        return Result<IReadOnlyList<AppointmentDto>>.Success(appointments.Select(MapToDto).ToList().AsReadOnly());
+    }
+
+    private static AppointmentDto MapToDto(Appointment appointment)
+    {
+        return new AppointmentDto
+        {
+            Id = appointment.Id,
+            PatientId = appointment.PatientId,
+            DoctorId = appointment.DoctorId,
+            StartTime = appointment.StartTime,
+            EndTime = appointment.EndTime,
+            Status = appointment.Status,
+            DoctorName = appointment.Doctor?.FullName,
+            PatientName = appointment.Patient?.FullName 
+        };
     }
 }

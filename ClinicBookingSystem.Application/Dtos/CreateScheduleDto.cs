@@ -6,7 +6,12 @@ using System.Threading.Tasks;
 
 namespace ClinicBookingSystem.Application.Dtos
 {
-    internal class CreateScheduleDto
+    public class CreateScheduleDto
     {
+        public DayOfWeek DayOfWeek { get; set; }
+        public TimeOnly  StartTime{ get; set; }
+        public TimeOnly  EndTime{ get; set; }
+        public int SlotDuration{ get; set; }
+
     }
 }

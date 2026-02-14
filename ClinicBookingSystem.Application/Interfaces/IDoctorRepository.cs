@@ -11,6 +11,7 @@ namespace ClinicBookingSystem.Application.Interfaces
     {
         public Task<Doctor?> GetByIdAsync(Guid doctorId);
         public Task<IReadOnlyList<Doctor>> GetAllAsync();
+        Task<bool> ExistsAsync(Guid id);
 
     }
 }

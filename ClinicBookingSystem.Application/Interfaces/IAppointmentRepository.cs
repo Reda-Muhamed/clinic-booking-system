@@ -9,10 +9,10 @@ namespace ClinicBookingSystem.Application.Interfaces
 {
     public interface IAppointmentRepository
     {
-        public Task AddAsymc(Appointment appointment);
+        public Task AddAsync(Appointment appointment);
         public Task<Appointment?> GetByIdAsync(Guid appointmentId);
         Task<Appointment?> GetByIdWithDetailsAsync(Guid appointmentId);
-
+        Task<bool> HasAppointmentsInScheduleAsync(Guid scheduleId);
         public Task<IReadOnlyList<Appointment>> GetByPatientIdAsync(Guid patientId);
         public Task<IReadOnlyList<Appointment>> GetByDoctorAndDateAsync(Guid doctorId, DateOnly date);
         public Task<IReadOnlyList<Appointment>> GetByDoctorIdAsync(Guid doctorId);
