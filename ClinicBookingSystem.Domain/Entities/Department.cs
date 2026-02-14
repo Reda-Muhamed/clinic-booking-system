@@ -10,6 +10,7 @@ namespace ClinicBookingSystem.Domain.Entities
     {
         public Guid Id { get; private set; }
         public string Name { get; private set; } = null!;
+        public ICollection<Doctor> Doctors { get; private set; } = new List<Doctor>();
         private Department() { }
         public Department(string name)
         {

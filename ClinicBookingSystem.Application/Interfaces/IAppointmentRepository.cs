@@ -13,6 +13,7 @@ namespace ClinicBookingSystem.Application.Interfaces
         public Task<Appointment?> GetByIdAsync(Guid appointmentId);
         Task<Appointment?> GetByIdWithDetailsAsync(Guid appointmentId);
         Task<bool> HasAppointmentsInScheduleAsync(Guid scheduleId);
+        Task<bool> HasActiveAppointmentsAsync(Guid doctorId);
         public Task<IReadOnlyList<Appointment>> GetByPatientIdAsync(Guid patientId);
         public Task<IReadOnlyList<Appointment>> GetByDoctorAndDateAsync(Guid doctorId, DateOnly date);
         public Task<IReadOnlyList<Appointment>> GetByDoctorIdAsync(Guid doctorId);

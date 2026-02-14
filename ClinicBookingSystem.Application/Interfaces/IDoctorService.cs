@@ -15,5 +15,8 @@ namespace ClinicBookingSystem.Application.Interfaces
             int pageNumber = 1,
             int pageSize = 10);
         public Task<Result<DoctorDto>> GetDoctorByIdAsync(Guid id);
+        Task<Result<Guid>> CreateDoctorAsync(CreateDoctorDto dto);
+        Task<Result> UpdateDoctorAsync(UpdateDoctorDto dto);
+        Task<Result> DeleteDoctorAsync(Guid doctorId);
     }
 }

@@ -19,9 +19,16 @@ namespace ClinicBookingSystem.Domain.Entities
         private Schedule() { }
         public Schedule(Guid doctorId, TimeOnly startTime, TimeOnly endTime, int slotDurationInMinutes, DayOfWeek dayOfWeek)
         {
-            var totalMinutes = (endTime - startTime).TotalMinutes;
-            if (endTime <= startTime || slotDurationInMinutes <= 0 || totalMinutes % slotDurationInMinutes != 0)
-                throw new ArgumentException("End time must be greater than start time and the duration must be divisible by slot duration.");
+            if (endTime <= startTime)
+                throw new ArgumentException("End time must be after start time.");
+
+            if (slotDurationInMinutes <= 0)
+                throw new ArgumentException("Slot duration must be positive.");
+
+            var duration = endTime - startTime;
+            if (duration.TotalMinutes % slotDurationInMinutes != 0)
+                throw new ArgumentException($"The shift duration ({duration.TotalMinutes} mins) is not divisible by the slot size ({slotDurationInMinutes} mins).");
+
             Id = Guid.NewGuid();
             DoctorId = doctorId;
             StartTime = startTime;

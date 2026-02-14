@@ -60,8 +60,8 @@ namespace ClinicBookingSystem.Domain.Entities
         {
             if (Status == AppointmentStatus.Completed)
                 throw new InvalidOperationException("Completed appointment cannot be cancelled.");
-            if(Status == AppointmentStatus.Cancelled)
-                throw new InvalidOperationException("Appointment is already cancelled.");
+            if (Status == AppointmentStatus.Cancelled)
+                return;
             if(Status == AppointmentStatus.Rejected)
                 throw new InvalidOperationException("Rejected appointment cannot be cancelled.");
             Status = AppointmentStatus.Cancelled;
