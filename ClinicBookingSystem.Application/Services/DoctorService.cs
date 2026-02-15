@@ -11,14 +11,14 @@ using System.Threading.Tasks;
 
 namespace ClinicBookingSystem.Application.Services
 {
-    public class DoctorServices : IDoctorService
+    public class DoctorService : IDoctorService
     {
         private readonly IAppointmentRepository _appointmentRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IDepartmentRepository _departmentRepository;
         private readonly IDoctorRepository _doctorRepository;
 
-        public DoctorServices(IAppointmentRepository appointmentRepository,IUnitOfWork unitOfWork,IDepartmentRepository departmentRepository,IDoctorRepository doctorRepository)
+        public DoctorService(IAppointmentRepository appointmentRepository,IUnitOfWork unitOfWork,IDepartmentRepository departmentRepository,IDoctorRepository doctorRepository)
         {
             this._appointmentRepository = appointmentRepository;
             this._unitOfWork = unitOfWork;
