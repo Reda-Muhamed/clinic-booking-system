@@ -1,56 +1,97 @@
 ﻿using ClinicBookingSystem.Application.Interfaces;
 using ClinicBookingSystem.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace ClinicBookingSystem.Application.Services
+using ClinicBookingSystem.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+namespace ClinicBookingSystem.Infrastructure.Repositories
 {
     public class AppointmentRepository : IAppointmentRepository
     {
-        public Task AddAsync(Appointment appointment)
+        private readonly ApplicationDbContext _context;
+
+        public AppointmentRepository(ApplicationDbContext context)
         {
-            throw new NotImplementedException();
+            _context = context;
         }
 
-        public Task<IReadOnlyList<Appointment>> GetByDoctorAndDateAsync(Guid doctorId, DateOnly date)
+        public async Task AddAsync(Appointment appointment)
         {
-            throw new NotImplementedException();
+            await _context.Appointments.AddAsync(appointment);
         }
 
-        public Task<IReadOnlyList<Appointment>> GetByDoctorIdAsync(Guid doctorId)
+        public async Task<IReadOnlyList<Appointment>> GetByDoctorAndDateAsync(Guid doctorId, DateOnly date)
         {
-            throw new NotImplementedException();
+            var startOfDay = date.ToDateTime(TimeOnly.MinValue);
+            var endOfDay = startOfDay.AddDays(1);
+
+            var appointments = await _context.Appointments
+                .Where(a => a.DoctorId == doctorId &&
+                            a.StartTime >= startOfDay &&
+                            a.StartTime < endOfDay)
+                .ToListAsync(); 
+
+            return appointments.AsReadOnly();
         }
 
-        public Task<Appointment?> GetByIdAsync(Guid appointmentId)
+        public async Task<IReadOnlyList<Appointment>> GetByDoctorIdAsync(Guid doctorId)
         {
-            throw new NotImplementedException();
+            var appointments = await _context.Appointments
+                .Where(a => a.DoctorId == doctorId)
+                .ToListAsync();
+
+            return appointments.AsReadOnly();
         }
 
-        public Task<Appointment?> GetByIdWithDetailsAsync(Guid appointmentId)
+        public async Task<Appointment?> GetByIdAsync(Guid appointmentId)
         {
-            throw new NotImplementedException();
+            return await _context.Appointments
+                .FirstOrDefaultAsync(a => a.Id == appointmentId);
         }
 
-        public Task<IReadOnlyList<Appointment>> GetByPatientIdAsync(Guid patientId)
+        public async Task<Appointment?> GetByIdWithDetailsAsync(Guid appointmentId)
         {
-            throw new NotImplementedException();
+            return await _context.Appointments
+                .Include(a => a.Doctor)
+                .Include(a => a.Patient)
+                .FirstOrDefaultAsync(a => a.Id == appointmentId);
         }
 
-        public Task<bool> HasActiveAppointmentsAsync(Guid doctorId)
+        public async Task<IReadOnlyList<Appointment>> GetByPatientIdAsync(Guid patientId)
         {
-            throw new NotImplementedException();
+            var appointments = await _context.Appointments
+                .Include(a => a.Doctor)
+                .Where(a => a.PatientId == patientId)
+                .OrderByDescending(a => a.StartTime) 
+                .ToListAsync();
+
+            return appointments.AsReadOnly();
         }
 
-        public Task<bool> HasAppointmentsInScheduleAsync(Guid scheduleId)
+        public async Task<bool> HasActiveAppointmentsAsync(Guid doctorId)
         {
-            throw new NotImplementedException();
+            return await _context.Appointments
+                .AnyAsync(a => a.DoctorId == doctorId &&
+                               a.StartTime > DateTime.UtcNow &&
+                               a.Status != Domain.Enums.AppointmentStatus.Cancelled);
+        }
+
+        public async Task<bool> HasAppointmentsInScheduleAsync(Guid scheduleId)
+        {
+            var schedule = await _context.Schedules.FindAsync(scheduleId);
+            if (schedule == null) return false;
+
+            return await _context.Appointments
+                .AnyAsync(a => a.DoctorId == schedule.DoctorId &&
+                                (int)a.StartTime.DayOfWeek == (int)schedule.DayOfWeek &&
+                                
+                               a.Status != Domain.Enums.AppointmentStatus.Cancelled &&
+                               a.StartTime.TimeOfDay < schedule.EndTime.ToTimeSpan() &&
+                               a.EndTime.TimeOfDay > schedule.StartTime.ToTimeSpan());
         }
 
         public Task UpdateAsync(Appointment appointment)
         {
-            throw new NotImplementedException();
+            _context.Appointments.Update(appointment);
+            return Task.CompletedTask;
         }
     }
 }

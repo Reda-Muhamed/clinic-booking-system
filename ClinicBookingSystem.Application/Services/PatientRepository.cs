@@ -1,26 +1,29 @@
 ﻿using ClinicBookingSystem.Application.Interfaces;
 using ClinicBookingSystem.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using ClinicBookingSystem.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
-namespace ClinicBookingSystem.Application.Services
+namespace ClinicBookingSystem.Infrastructure.Repositories
 {
     public class PatientRepository : IPatientRepository
     {
-        public Task<bool> ExistsAsync(Guid id)
+        private readonly ApplicationDbContext _context;
+
+        public PatientRepository(ApplicationDbContext context)
         {
-            throw new NotImplementedException();
+            _context = context;
         }
 
-        public Task<IReadOnlyList<Doctor>> GetAllAsync()
+        public async Task AddAsync(Patient patient)
         {
-            throw new NotImplementedException();
+            await _context.Patients.AddAsync(patient);
         }
 
-        public Task<Doctor?> GetByIdAsync(Guid doctorId)
+        public async Task<bool> ExistsAsync(Guid id)
         {
-            throw new NotImplementedException();
+            return await _context.Patients.AnyAsync(p => p.Id == id);
         }
+
+        
     }
 }

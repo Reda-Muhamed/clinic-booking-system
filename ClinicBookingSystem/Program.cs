@@ -2,6 +2,7 @@ using ClinicBookingSystem.Application.Interfaces;
 using ClinicBookingSystem.Application.Services;
 using ClinicBookingSystem.Infrastructure.Identity;
 using ClinicBookingSystem.Infrastructure.Persistence;
+using ClinicBookingSystem.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore; 
 

@@ -1,46 +1,87 @@
 ﻿using ClinicBookingSystem.Application.Interfaces;
 using ClinicBookingSystem.Domain.Entities;
+using ClinicBookingSystem.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace ClinicBookingSystem.Application.Services
+namespace ClinicBookingSystem.Infrastructure.Repositories
 {
     public class DoctorRepository : IDoctorRepository
     {
-        public Task AddAsync(Doctor doctor)
+        private readonly ApplicationDbContext _context;
+
+        public DoctorRepository(ApplicationDbContext context)
         {
-            throw new NotImplementedException();
+            _context = context;
         }
 
-        public Task<bool> ExistsAsync(Guid id)
+        public async Task AddAsync(Doctor doctor)
         {
-            throw new NotImplementedException();
+            await _context.Doctors.AddAsync(doctor);
         }
 
-        public Task<IReadOnlyList<Doctor>> GetAllAsync()
+        public async Task<bool> ExistsAsync(Guid id)
         {
-            throw new NotImplementedException();
+            return await _context.Doctors.AnyAsync(d => d.Id == id);
         }
 
-        public Task<Doctor?> GetByIdAsync(Guid doctorId)
+        public async Task<IReadOnlyList<Doctor>> GetAllAsync()
         {
-            throw new NotImplementedException();
+            return await _context.Doctors
+                .Include(d => d.Department)
+                .ToListAsync();
         }
 
-        public Task<(IEnumerable<Doctor> Doctors, int TotalCount)> GetDoctorsWithFilterAsync(string? searchTerm, string? department, int pageNumber, int pageSize)
+        public async Task<Doctor?> GetByIdAsync(Guid doctorId)
         {
-            throw new NotImplementedException();
+            // the query filter auto-hide the deleted doctors
+            return await _context.Doctors
+                .Include(d => d.Department)
+                .FirstOrDefaultAsync(d => d.Id == doctorId);
         }
 
-        public Task<bool> HasDoctorsInDepartmentAsync(Guid departmentId)
+        public async Task<(IEnumerable<Doctor> Doctors, int TotalCount)> GetDoctorsWithFilterAsync(
+            string? searchTerm,
+            string? departmentName,
+            int pageNumber,
+            int pageSize)
         {
-            throw new NotImplementedException();
+            var query = _context.Doctors
+                .Include(d => d.Department)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                query = query.Where(d => d.FullName.Contains(searchTerm,StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(departmentName))
+            {
+                query = query.Where(d => d.Department.Name.Contains(departmentName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            int totalCount = await query.CountAsync();
+
+            var doctors = await query
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return (doctors, totalCount);
+        }
+
+        public async Task<bool> HasDoctorsInDepartmentAsync(Guid departmentId)
+        {
+            return await _context.Doctors.AnyAsync(d => d.DepartmentId == departmentId);
         }
 
         public Task UpdateAsync(Doctor doctor)
         {
-            throw new NotImplementedException();
+            _context.Doctors.Update(doctor);
+            return Task.CompletedTask;
         }
     }
 }

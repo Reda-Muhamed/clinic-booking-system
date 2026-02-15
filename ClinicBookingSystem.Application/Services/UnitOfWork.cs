@@ -1,15 +1,20 @@
 ﻿using ClinicBookingSystem.Application.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using ClinicBookingSystem.Infrastructure.Persistence;
 
-namespace ClinicBookingSystem.Application.Services
+namespace ClinicBookingSystem.Infrastructure.Repositories
 {
     public class UnitOfWork : IUnitOfWork
     {
-        public Task SaveChangesAsync()
+        private readonly ApplicationDbContext _context;
+
+        public UnitOfWork(ApplicationDbContext context)
         {
-            throw new NotImplementedException();
+            _context = context;
+        }
+
+        public async Task SaveChangesAsync()
+        {
+            await _context.SaveChangesAsync();
         }
     }
 }

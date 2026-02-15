@@ -1,46 +1,58 @@
 ﻿using ClinicBookingSystem.Application.Interfaces;
 using ClinicBookingSystem.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using ClinicBookingSystem.Infrastructure.Persistence; 
+using Microsoft.EntityFrameworkCore; 
 
-namespace ClinicBookingSystem.Application.Services
+namespace ClinicBookingSystem.Infrastructure.Repositories
 {
     public class DepartmentRepository : IDepartmentRepository
     {
-        public Task AddAsync(Department department)
+        private readonly ApplicationDbContext _context;
+
+        public DepartmentRepository(ApplicationDbContext context)
         {
-            throw new NotImplementedException();
+            _context = context;
+        }
+
+        public async Task AddAsync(Department department)
+        {
+            await _context.Departments.AddAsync(department);
         }
 
         public Task DeleteAsync(Department department)
         {
-            throw new NotImplementedException();
+            _context.Departments.Remove(department);
+            return Task.CompletedTask;
         }
 
-        public Task<bool> ExistsAsync(Guid id)
+        public async Task<bool> ExistsAsync(Guid id)
         {
-            throw new NotImplementedException();
+            return await _context.Departments.AnyAsync(d => d.Id == id);
         }
 
-        public Task<bool> ExistsByNameAsync(string name)
+        public async Task<bool> ExistsByNameAsync(string name)
         {
-            throw new NotImplementedException();
+            return await _context.Departments.AnyAsync(d => d.Name == name);
         }
 
-        public Task<IReadOnlyList<Department>> GetAllAsync()
+        public async Task<IReadOnlyList<Department>> GetAllAsync()
         {
-            throw new NotImplementedException();
+            var departments = await _context.Departments
+                .AsNoTracking() 
+                .ToListAsync();
+
+            return departments.AsReadOnly();
         }
 
-        public Task<Department?> GetByIdAsync(Guid departmentId)
+        public async Task<Department?> GetByIdAsync(Guid departmentId)
         {
-            throw new NotImplementedException();
+            return await _context.Departments.FindAsync(departmentId);
         }
 
         public Task UpdateAsync(Department department)
         {
-            throw new NotImplementedException();
+            _context.Departments.Update(department);
+            return Task.CompletedTask;
         }
     }
 }
